@@ -4,6 +4,7 @@ import glob2
 
 today = date.today()
 file_list = glob2.glob('./*game/*_{}.xlsx'.format(today))
+print(file_list)
 
 
 # 读取现有 Excel 文件
@@ -45,5 +46,5 @@ for file_path in file_list:
 existing_data = existing_data.sort_values(by=['测试日期', '时间','游戏名'], ascending=True)
 # Output the sorted DataFrame
 ##print(sorted_data)
-existing_data.to_excel('existing_data.xlsx', index=False)
+existing_data.to_excel('近期测试产品.xlsx', index=False)
 print('done')
