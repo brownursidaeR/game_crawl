@@ -1,4 +1,4 @@
-import requests,json
+import requests,json,time
 from datetime import date
 import pandas as pd
 
@@ -7,12 +7,9 @@ proxies = {
     'https': 'http://127.0.0.1:7897'  # https -> http
 }
 
-
 def mi_detail(game_id):
     url = "https://app.knights.mi.com/ginfo/api/m/detail/page"
-
     payload = "gameId={}".format(game_id)
-
     headers = {
         'User-Agent': "okhttp/4.9.3",
         'Accept-Encoding': "gzip",
@@ -24,19 +21,24 @@ def mi_detail(game_id):
         'mi-game-first': "1716990582072",
         'mi-game-versiontype': ""
     }
+    response = requests.post(url, data=payload, headers=headers)#,proxies=proxies)
+    return json.loads(response.text).get('data').get('blocks')[0]
 
-    response = requests.post(url, data=payload, headers=headers,proxies=proxies)
-
-    print(response.text)
-    return
+def timestamp_to_time(timeStamp,time_format_string):
+    try:
+        timeStamp = int(timeStamp)/1000
+        timeArray = time.localtime(timeStamp)
+        otherStyleTime = time.strftime(time_format_string, timeArray)
+    except:
+        otherStyleTime = None
+        return otherStyleTime
+    return otherStyleTime
 
 def mi_crawl(page=1):
     while True:
-          url = "https://app.knights.mi.com/knights/recommend/simple/page/normal/v7"
-
-          payload = "availableSpace=12719887360&channel=meng_1449_55_android&id=90028&lastGameId=0&manufacturer=Google&mgid=game_86bad04acdd1a24484e94c5a8d87db36&model=Pixel+8+Pro&page={}&pageSize=10&platform=android&recommend=true&remoteIp=192.168.50.249&sdk=34&supportTmpfs=false&totalSpace=30712801792&ua=Google%7CPixel+8+Pro%7CAP31.240426.023%7C34%7Chusky&uuid=0&versionCode=130500020&versionName=13.5.0.20".format(page)
-
-          headers = {
+        url = "https://app.knights.mi.com/knights/recommend/simple/page/normal/v7"
+        payload = "availableSpace=12719887360&channel=meng_1449_55_android&id=90028&lastGameId=0&manufacturer=Google&mgid=game_86bad04acdd1a24484e94c5a8d87db36&model=Pixel+8+Pro&page={}&pageSize=10&platform=android&recommend=true&remoteIp=192.168.50.249&sdk=34&supportTmpfs=false&totalSpace=30712801792&ua=Google%7CPixel+8+Pro%7CAP31.240426.023%7C34%7Chusky&uuid=0&versionCode=130500020&versionName=13.5.0.20".format(page)
+        headers = {
               'User-Agent': "okhttp/4.9.3",
               'Accept-Encoding': "gzip",
               'cache-control': "no-cache",
@@ -47,25 +49,60 @@ def mi_crawl(page=1):
               'mi-game-first': "1716990582072",
               'mi-game-versiontype': ""
           }
-
-          response = requests.post(url, data=payload, headers=headers, proxies=proxies)
-          game_json = json.loads(response.text)
-          isLastPage = game_json.get('data').get('isLastPage')
-          if isLastPage:
-              print(isLastPage)
-
-              #代码
-              break
-          game_list = game_json.get('data').get('blocks')
-          if game_list:
-            for game in game_list:
-              print(game.get('title'))
-          page+=1
+        response = requests.post(url, data=payload, headers=headers)#, proxies=proxies)
+        game_json = json.loads(response.text)
+        isLastPage = game_json.get('data').get('isLastPage')
+        if isLastPage:
+            print(isLastPage)
+            break
+        with open('data_{}.json'.format(page), 'w', encoding='utf-8') as f:
+            json.dump(game_json, f, ensure_ascii=False)
+        blocks_list = game_json.get('data').get('blocks')
+        if blocks_list:
+            for block in blocks_list:
+                blocks_date = block.get('title')
+                try:
+                    blocks_date = blocks_date.split(' ')[1]
+                except:
+                    blocks_date = blocks_date
+                game_data = block.get('list')
+                game_list = []
+                for game in game_data:
+                    attributeTag = game.get('attributeTag')
+                    if attributeTag: # 新游/首发/活动,活动无tag
+                        row_data = []
+                        game_id = game.get('id')
+                        detail_page = 'https://game.xiaomi.com/game/{}'.format(game_id)
+                        title = game.get('title')
+                        game_detail = mi_detail(game_id)
+                        developer = game_detail.get('developerName')
+                        publisherName = game_detail.get('publisherName')
+                        game_stat =  attributeTag.get('text')
+                        introduction = game_detail.get('introduction')
+                        test_time = timestamp_to_time(game_detail.get('updateTime'),"%H:%M")
+                        tag = [i['name'] for i in game.get('tag')]
+                        score = game['score']
+                        icon = game['dInfo']['icon']
+                        img = None
+                        download = game_detail.get('gameApkSsl',game_detail.get('gameApk'))
+                        row_data = ['小米商店预约',blocks_date,test_time,title,tag,publisherName,developer,score,game_stat,detail_page,icon,img,introduction,download]
+                        if row_data:
+                            game_list.append(row_data)
+                            headers = ['数据来源', '测试日期', '时间', '游戏名', '游戏类型', '发行厂商', '研发厂商','平台评分', '测试模式', '详情页', 'icon', '图片', '游戏介绍', '下载链接']
+                            df = pd.DataFrame(data=game_list, columns=headers)
+                global all_df
+                all_df.append(df)
+        time.sleep(0.5)
+        print(f"处理第 {page} 页数据")        
+        page+=1
     return all_df
+
 
 all_df = []
 today = date.today()
 print(today)
 all_df = mi_crawl()
-# all_df = pd.concat(all_df, ignore_index=True)
-# all_df.to_excel('开测小米_{date}.xlsx'.format(date=today), index=False)
+# print(all_df)
+all_df = pd.concat(all_df, ignore_index=True)
+# all_df.drop_duplicates(subset=[['测试日期','游戏名']])
+all_df.to_excel('开测小米_{date}.xlsx'.format(date=today), index=False)
