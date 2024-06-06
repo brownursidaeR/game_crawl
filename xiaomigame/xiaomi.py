@@ -1,6 +1,8 @@
 import requests,json,time
 from datetime import date
 import pandas as pd
+import re
+from datetime import datetime
 
 proxies = {
     'http': 'http://127.0.0.1:7897',
@@ -34,7 +36,23 @@ def timestamp_to_time(timeStamp,time_format_string):
         return otherStyleTime
     return otherStyleTime
 
+def trans_days(date_str):
+    match = re.match(r'(\d+)月(\d+)日', date_str)
+    if match:
+        month = int(match.group(1))
+        day = int(match.group(2))
+
+        # 创建一个 datetime 对象，并设置年份为2024年
+        parsed_date = datetime(year=datetime.today().year, month=month, day=day)
+
+        # 格式化为目标字符串格式
+        formatted_date = parsed_date.strftime("%Y-%m-%d")
+    else:
+        formatted_date = None
+    return formatted_date
+
 def mi_crawl(page=1):
+    all_data = []
     while True:
         url = "https://app.knights.mi.com/knights/recommend/simple/page/normal/v7"
         payload = "availableSpace=12719887360&channel=meng_1449_55_android&id=90028&lastGameId=0&manufacturer=Google&mgid=game_86bad04acdd1a24484e94c5a8d87db36&model=Pixel+8+Pro&page={}&pageSize=10&platform=android&recommend=true&remoteIp=192.168.50.249&sdk=34&supportTmpfs=false&totalSpace=30712801792&ua=Google%7CPixel+8+Pro%7CAP31.240426.023%7C34%7Chusky&uuid=0&versionCode=130500020&versionName=13.5.0.20".format(page)
@@ -63,8 +81,12 @@ def mi_crawl(page=1):
                 blocks_date = block.get('title')
                 try:
                     blocks_date = blocks_date.split(' ')[1]
-                except:
+                    if '月' in blocks_date:
+                        blocks_date = trans_days(blocks_date)
+                except Exception as e:
                     blocks_date = blocks_date
+                    if '月' in blocks_date:
+                        blocks_date = trans_days(blocks_date)
                 game_data = block.get('list')
                 game_list = []
                 for game in game_data:
@@ -80,7 +102,7 @@ def mi_crawl(page=1):
                         game_stat =  attributeTag.get('text')
                         introduction = game_detail.get('introduction')
                         test_time = timestamp_to_time(game_detail.get('updateTime'),"%H:%M")
-                        tag = [i['name'] for i in game.get('tag')]
+                        tag = '\n'.join( [i['name'] for i in game.get('tag')])
                         score = game['score']
                         icon = game['dInfo']['icon']
                         img = None
@@ -88,14 +110,13 @@ def mi_crawl(page=1):
                         row_data = ['小米商店预约',blocks_date,test_time,title,tag,publisherName,developer,score,game_stat,detail_page,icon,img,introduction,download]
                         if row_data:
                             game_list.append(row_data)
-                            headers = ['数据来源', '测试日期', '时间', '游戏名', '游戏类型', '发行厂商', '研发厂商','平台评分', '测试模式', '详情页', 'icon', '图片', '游戏介绍', '下载链接']
-                            df = pd.DataFrame(data=game_list, columns=headers)
-                global all_df
-                all_df.append(df)
+                        headers = ['数据来源', '测试日期', '时间', '游戏名', '游戏类型', '发行厂商', '研发厂商','平台评分', '测试模式', '详情页', 'icon', '图片', '游戏介绍', '下载链接']
+                        df = pd.DataFrame(data=game_list, columns=headers)
+                        all_data.append(df)
         time.sleep(0.5)
         print(f"处理第 {page} 页数据")        
         page+=1
-    return all_df
+    return all_data
 
 
 all_df = []
@@ -104,5 +125,5 @@ print(today)
 all_df = mi_crawl()
 # print(all_df)
 all_df = pd.concat(all_df, ignore_index=True)
-# all_df.drop_duplicates(subset=[['测试日期','游戏名']])
+all_df.drop_duplicates()
 all_df.to_excel('开测小米_{date}.xlsx'.format(date=today), index=False)
